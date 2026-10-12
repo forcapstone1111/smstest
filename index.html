@@ -64,6 +64,30 @@
               <div class="form-text">Separate multiple numbers with commas</div>
             </div>
 
+            <!-- Online Device/Sim (shown when Online selected) -->
+            <div id="onlineDeviceGroup" class="mb-3" style="display:none;">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label for="deviceSelect" class="form-label">Device</label>
+                  <select class="form-select" id="deviceSelect" disabled>
+                    <option value="">Default device</option>
+                  </select>
+                  <div class="form-text" id="deviceStatusText"></div>
+                </div>
+                <div class="col-md-6">
+                  <label for="simSelect" class="form-label">SIM</label>
+                  <select class="form-select" id="simSelect" disabled>
+                    <option value="">Default SIM</option>
+                  </select>
+                  <div class="form-text" id="simStatusText"></div>
+                </div>
+              </div>
+              <div class="mt-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="refreshDevicesBtn">Refresh Devices</button>
+                <span class="small text-muted ms-2" id="devicesLoadingText" style="display:none;">Loading...</span>
+              </div>
+            </div>
+
             <!-- Message -->
             <div class="mb-3">
               <label for="messageInput" class="form-label">Message</label>
@@ -130,8 +154,12 @@
               <label for="apiKey" class="form-label">API Key</label>
               <input type="password" class="form-control" id="apiKey" placeholder="sms_live_...">
             </div>
-            <button type="button" class="btn btn-outline-secondary" id="testOnlineBtn">Test Connection</button>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-secondary" id="testOnlineBtn">Test Connection</button>
+              <button type="button" class="btn btn-outline-secondary" id="loadDevicesBtn">Fetch Devices</button>
+            </div>
             <div id="onlineTestResult" class="mt-2"></div>
+            <div id="devicesResult" class="mt-2 small text-muted"></div>
           </div>
         </div>
 

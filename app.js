@@ -6,6 +6,8 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // State
 let settings = JSON.parse(localStorage.getItem('smsSettings') || '{}');
 let currentEndpoint = 'local';
+let onlineDevices = [];
+let onlineSimsCache = {};
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,6 +18,10 @@ document.addEventListener('DOMContentLoaded', () => {
   bindSettings();
   updateCharCount();
   checkStatus();
+  toggleOnlineDeviceGroup();
+  if (settings.convexUrl && settings.apiKey) {
+    loadOnlineDevices().catch(() => {});
+  }
 });
 
 // Navigation
@@ -39,8 +45,15 @@ function bindEndpointToggle() {
       $$('.endpoint-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentEndpoint = btn.dataset.endpoint;
+      toggleOnlineDeviceGroup();
     });
   });
+}
+
+function toggleOnlineDeviceGroup() {
+  const g = $('#onlineDeviceGroup');
+  if (!g) return;
+  g.style.display = currentEndpoint === 'online' ? 'block' : 'none';
 }
 
 // Character counter
@@ -125,10 +138,15 @@ async function sendOnline(phone, message) {
   const results = [];
   for (const num of numbers) {
     const e164 = toE164(num);
+    const body = { to: e164, message };
+    const dev = $('#deviceSelect')?.value;
+    const sim = $('#simSelect')?.value;
+    if (dev) body.deviceId = dev;
+    if (sim) body.simId = sim;
     const res = await fetch(target, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ to: e164, message }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -162,12 +180,25 @@ function bindSettings() {
   $('#saveSettingsBtn').addEventListener('click', saveSettings);
   $('#testLocalBtn').addEventListener('click', testLocal);
   $('#testOnlineBtn').addEventListener('click', testOnline);
+  $('#loadDevicesBtn').addEventListener('click', loadOnlineDevices);
+  const deviceSelect = $('#deviceSelect');
+  const refresh = $('#refreshDevicesBtn');
+  if (deviceSelect) deviceSelect.addEventListener('change', onDeviceChange);
+  if (refresh) refresh.addEventListener('click', () => loadOnlineDevices());
 }
 
 function loadSettings() {
   if (settings.localIp) $('#localIp').value = settings.localIp;
   if (settings.convexUrl) $('#convexUrl').value = settings.convexUrl;
   if (settings.apiKey) $('#apiKey').value = settings.apiKey;
+  if (settings.onlineDeviceId) {
+    const ds = $('#deviceSelect');
+    if (ds) ds.value = settings.onlineDeviceId;
+  }
+  if (settings.onlineSimId) {
+    const ss = $('#simSelect');
+    if (ss) ss.value = settings.onlineSimId;
+  }
 }
 
 function saveSettings() {
@@ -175,6 +206,8 @@ function saveSettings() {
     localIp: $('#localIp').value.trim(),
     convexUrl: $('#convexUrl').value.trim(),
     apiKey: $('#apiKey').value.trim(),
+    onlineDeviceId: $('#deviceSelect')?.value || '',
+    onlineSimId: $('#simSelect')?.value || '',
   };
   localStorage.setItem('smsSettings', JSON.stringify(settings));
   showSaveFeedback();
@@ -227,11 +260,115 @@ async function testOnline() {
       body: JSON.stringify({ to: '', message: '' }),
     });
     if (res.status === 401) throw new Error('Invalid API key');
-    if (res.status === 400) { result.innerHTML = '<span class="text-success small">Connected — API key valid</span>'; return; }
-    if (res.ok) { result.innerHTML = '<span class="text-success small">Connected</span>'; return; }
+    if (res.status === 400) {
+      result.innerHTML = '<span class="text-success small">Connected — API key valid</span>';
+      loadOnlineDevices().catch(() => {});
+      return;
+    }
+    if (res.ok) {
+      result.innerHTML = '<span class="text-success small">Connected</span>';
+      return;
+    }
     result.innerHTML = `<span class="text-danger small">Error: ${res.status}</span>`;
   } catch (err) {
     result.innerHTML = `<span class="text-danger small">${err.message}</span>`;
+  }
+}
+
+async function loadOnlineDevices() {
+  const url = $('#convexUrl').value.trim();
+  const key = $('#apiKey').value.trim();
+  const result = $('#devicesResult');
+  const ds = $('#deviceSelect');
+  const ss = $('#simSelect');
+  const loadBtn = $('#loadDevicesBtn');
+  const loading = $('#devicesLoadingText');
+
+  if (!url || !key) { if (result) result.textContent = 'Set Convex URL and API key first.'; return; }
+  try {
+    if (loadBtn) loadBtn.disabled = true;
+    if (loading) loading.style.display = 'inline';
+    if (result) result.textContent = '';
+    const res = await fetch(`${url}/v1/devices`, {
+      headers: { 'Authorization': `Bearer ${key}` },
+    });
+    if (!res.ok) throw new Error(`Failed to load devices (${res.status})`);
+    const data = await res.json();
+    onlineDevices = (data.devices || []).slice();
+    if (ds) {
+      ds.innerHTML = '<option value="">Default device</option>';
+      onlineDevices.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        const ready = d.ready ? '✓' : '✗';
+        const def = d.isDefault ? ' (default)' : '';
+        opt.textContent = `${d.name} — ${d.status} ${ready}${def}`;
+        ds.appendChild(opt);
+      });
+      ds.disabled = onlineDevices.length === 0;
+      const saved = settings.onlineDeviceId;
+      if (saved && onlineDevices.some(x => x.id === saved)) ds.value = saved;
+      else if (onlineDevices.length > 0) {
+        const def = onlineDevices.find(x => x.isDefault);
+        ds.value = def ? def.id : onlineDevices[0].id;
+      } else {
+        ds.value = '';
+      }
+    }
+    await loadSimsForSelected();
+    if (result) result.textContent = onlineDevices.length ? `${onlineDevices.length} device(s) loaded` : 'No devices paired';
+  } catch (err) {
+    if (result) result.textContent = err.message;
+    if (ds) { ds.disabled = true; ds.innerHTML = '<option value="">Default device</option>'; }
+    if (ss) { ss.disabled = true; ss.innerHTML = '<option value="">Default SIM</option>'; }
+  } finally {
+    if (loadBtn) loadBtn.disabled = false;
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+async function onDeviceChange() {
+  await loadSimsForSelected();
+}
+
+async function loadSimsForSelected() {
+  const url = $('#convexUrl').value.trim();
+  const key = $('#apiKey').value.trim();
+  const ds = $('#deviceSelect');
+  const ss = $('#simSelect');
+  const deviceId = ds?.value || '';
+  if (!url || !key || !deviceId) {
+    if (ss) { ss.disabled = true; ss.innerHTML = '<option value="">Default SIM</option>'; }
+    return;
+  }
+  try {
+    const res = await fetch(`${url}/v1/devices/${deviceId}/sims`, {
+      headers: { 'Authorization': `Bearer ${key}` },
+    });
+    if (!res.ok) throw new Error(`Failed to load SIMs (${res.status})`);
+    const data = await res.json();
+    const sims = (data.sims || []).filter(s => s.enabled !== false);
+    onlineSimsCache[deviceId] = sims;
+    if (ss) {
+      ss.innerHTML = '<option value="">Default SIM</option>';
+      sims.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        const def = s.isDefault ? ' (default)' : '';
+        const name = s.name || (s.slotIndex !== undefined ? `SIM ${s.slotIndex+1}` : 'SIM');
+        opt.textContent = `${name}${def}`;
+        ss.appendChild(opt);
+      });
+      ss.disabled = sims.length === 0;
+      const saved = settings.onlineSimId;
+      if (saved && sims.some(x => x.id === saved)) ss.value = saved;
+      else {
+        const def = sims.find(x => x.isDefault);
+        ss.value = def ? def.id : (sims[0]?.id || '');
+      }
+    }
+  } catch (err) {
+    if (ss) { ss.disabled = true; ss.innerHTML = '<option value="">Default SIM</option>'; }
   }
 }
 
