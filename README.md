@@ -25,10 +25,14 @@ No `npm install` is required — everything is vendored.
    - **Online Endpoint (Convex)** — your Convex URL (e.g.
      `https://your-project.convex.site`) and API key (`sms_live_...`).
 
-3. Click **Test** next to the endpoint to confirm it connects, then **Save Settings**.
+3. For **Online** (Convex): click **Test Connection** — if it passes (401/400 checks), it will
+   automatically **Fetch Devices**. Or click **Fetch Devices** manually. That loads your paired
+   phones/SIMs so you can pick which one to send from in the Send SMS tab.
 
-4. Go to the **Send SMS** tab, pick **Local** or **Online**, enter recipients and a
-   message, and send.
+4. Click **Save Settings**.
+
+5. Go to the **Send SMS** tab, pick **Local** or **Online**, enter recipients and a
+   message, and send. For Online, you can choose a specific Device/SIM (or leave as "Default").
 
 To stop the relay, press `Ctrl+C` in the black window, or just close it.
 
@@ -52,6 +56,22 @@ the page can talk to the tunnel.
 
 - **LAN / `ip:port`** → called directly, relay not used.
 - **Tunnel (domain name)** → routed through the relay at `127.0.0.1:3000`.
+
+### How device fetching works (Online/Convex)
+
+When using Online, the app fetches your paired devices/SIMs directly from your Convex deployment
+using your API key:
+
+1. `GET {ConvexURL}/v1/devices` with `Authorization: Bearer <API key>` — returns the list of
+   paired devices for that account (`id`, `name`, `status`, `ready`, `isDefault`). This is called
+   automatically after a successful Test Connection, or when you click **Fetch Devices**.
+2. When you pick a device, the app calls `GET {ConvexURL}/v1/devices/:id/sims` to load its SIMs
+   (enabled SIMs; shows `(default)` for the device/SIM defaults).
+3. On send, it includes `deviceId` and `simId` (if selected) in `POST /v1/messages/send`. If left
+   empty, the backend uses the account's **default device** and that device's **default SIM**.
+
+This is all API-key authenticated (same auth as sending messages) and requires the BYO backend
+endpoints added above.
 
 ## Deploying
 
