@@ -81,3 +81,10 @@ preset **Other**, no build command, no output directory).
 Note: a hosted copy can use the **Online** endpoint from anywhere. The **Local**
 endpoint only works on a machine that can reach the gateway (same Wi-Fi, or with
 `run.bat` running for a tunnel).
+
+
+## Interface shit 0
+![image alt](screenshots/image1.png)
+
+## Interface shit 1
+![image alt](screenshots/image2.png)
